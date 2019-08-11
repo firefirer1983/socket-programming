@@ -2,6 +2,9 @@ import socket
 import selectors
 import types
 
+
+counter = 0
+
 select = selectors.DefaultSelector()
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -20,6 +23,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if mask & selectors.EVENT_WRITE and key.data.out_buf:
                 sent = s.send(key.data.out_buf[:11])
                 print('sent:', sent)
+                counter += 1
                 key.data.out_buf = key.data.out_buf[sent:]
             
             if mask & selectors.EVENT_READ:
@@ -31,3 +35,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if key.data.in_buf:
                 key.data.out_buf += key.data.in_buf
                 key.data.in_buf = b''
+        
+        if counter > 100000:
+            break
+        
+

@@ -13,8 +13,9 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     print('READ:', selectors.EVENT_READ, 'WRITE:', selectors.EVENT_WRITE)
     select.register(s, selectors.EVENT_READ)
     while True:
-        events = select.select(timeout=None)
+        events = select.select(timeout=10)
         for key, mask in events:
+            print("mask ==> ", mask)
             if mask & selectors.EVENT_READ:
                 if not key.data:
                     csock, address = s.accept()
@@ -22,6 +23,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     select.register(csock,
                                     selectors.EVENT_READ|selectors.EVENT_WRITE,
                                     data=types.SimpleNamespace(in_buf=b'', out_buf=b''))
+                    csock.setblocking(False)
                 else:
                     csock = key.fileobj
                     received = csock.recv(1024)
