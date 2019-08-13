@@ -15,7 +15,6 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     while True:
         events = select.select(timeout=10)
         for key, mask in events:
-            print("mask ==> ", mask)
             if mask & selectors.EVENT_READ:
                 if not key.data:
                     csock, address = s.accept()
@@ -26,7 +25,14 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     csock.setblocking(False)
                 else:
                     csock = key.fileobj
-                    received = csock.recv(1024)
+                    try:
+                        received = csock.recv(1024)
+                    except BlockingIOError:
+                        continue
+                    except ConnectionResetError:
+                        csock.close()
+                        select.unregister(csock)
+                        continue
                     if not received:
                         select.unregister(csock)
                         csock.close()
@@ -36,7 +42,14 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             
             if mask & selectors.EVENT_WRITE:
                 csock = key.fileobj
-                sent = csock.send(key.data.out_buf[:11])
+                try:
+                    sent = csock.send(key.data.out_buf[:11])
+                except BlockingIOError:
+                    continue
+                except ConnectionResetError:
+                    csock.close()
+                    select.unregister(csock)
+                    continue
                 key.data.out_buf = key.data.out_buf[sent:]
 
             if key.data:
