@@ -14,7 +14,7 @@ buf = b'hello world'
 SEND_MAX = len(buf)
 
 
-def _on_event(sock, mask):
+def _echo(sock, mask):
     global buf
     try:
         if mask & EVENT_READ:
@@ -38,8 +38,8 @@ def _on_event(sock, mask):
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.setblocking(False)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
-    loop.add(s, EVENT_READ | EVENT_WRITE, _on_event)
-    s.connect_ex(('127.0.0.1', 5566))
+    loop.add(s, EVENT_READ | EVENT_WRITE, _echo)
+    s.connect_ex(('127.0.0.1', 1080))
     loop.run()
     
 

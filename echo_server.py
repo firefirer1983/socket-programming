@@ -17,10 +17,10 @@ SEND_MAX = 11
 def _on_accept(sock, mode):
     print('==> on accept', sock.fileno(), mode)
     csock, address = sock.accept()
-    loop.add(csock, EVENT_READ | EVENT_WRITE, _on_event)
+    loop.add(csock, EVENT_READ | EVENT_WRITE, _echo)
 
 
-def _on_event(sock, mode):
+def _echo(sock, mode):
     global buf
     try:
         if mode & EVENT_READ:

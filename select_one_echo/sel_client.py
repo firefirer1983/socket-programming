@@ -20,9 +20,9 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     while True:
         events = select.select(timeout=None)
         for key, mask in events:
-            if mask & selectors.EVENT_WRITE and key.data.out_buf:
+            if mask & selectors.EVENT_WRITE and key.raw_bytes.out_buf:
                 try:
-                    sent = s.send(key.data.out_buf[:11])
+                    sent = s.send(key.raw_bytes.out_buf[:11])
                 except BlockingIOError:
                     continue
                 except ConnectionResetError:
@@ -31,7 +31,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     continue
                 print('sent:', sent)
                 counter += 1
-                key.data.out_buf = key.data.out_buf[sent:]
+                key.raw_bytes.out_buf = key.raw_bytes.out_buf[sent:]
             
             if mask & selectors.EVENT_READ:
                 try:
@@ -44,11 +44,11 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     continue
                 if not received:
                     break
-                key.data.in_buf = key.data.in_buf + received
+                key.raw_bytes.in_buf = key.raw_bytes.in_buf + received
             
-            if key.data.in_buf:
-                key.data.out_buf += key.data.in_buf
-                key.data.in_buf = b''
+            if key.raw_bytes.in_buf:
+                key.raw_bytes.out_buf += key.raw_bytes.in_buf
+                key.raw_bytes.in_buf = b''
         
         if counter > 100000:
             break
