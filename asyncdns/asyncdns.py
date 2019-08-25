@@ -4,6 +4,8 @@ from collections import Iterable
 from enum import Enum, unique
 import struct
 
+from utils.util import Data, Response, pull_diagram_sock, pull_stream_sock, unpacks
+
 HOST = "8.8.8.8"
 PORT = 53
 
@@ -88,9 +90,9 @@ def bits(s, cnt):
 
 class HeaderSection:
     
-    def __init__(self, is_query, opcode, rcode, qdcount, ancount, nscount, arcount):
+    def __init__(self, qr, opcode, rcode, qdcount, ancount, nscount, arcount):
         self._query_id = os.urandom(2)
-        self._is_response = not is_query
+        self._is_response = qr.value
         self._opcode = opcode.value
         self._auth_answer = False
         self._truncation = False
@@ -102,24 +104,36 @@ class HeaderSection:
         self._ancount = ancount
         self._nscount = nscount
         self._arcount = arcount
-        self._misc = bits(self._is_response, 1) \
-            + bits(self._opcode, 4) \
-            + bits(self._auth_answer, 1) \
-            + bits(self._truncation, 1) \
-            + bits(self._recursion_desired, 1) \
-            + bits(self._recursion_avail, 1) \
-            + bits(self._rsv, 3) + bits(self._rcode, 4)
         
-        assert len(self._misc) == 16
-        self._header = self._query_id + struct.pack('>HHHHH',
-                                                    int(self._misc, 2),
-                                                    self._qdcount,
-                                                    self._ancount,
-                                                    self._nscount,
-                                                    self._arcount)
-    
+        self._misc_1 \
+            = bits(self._recursion_desired, 1) \
+            + bits(self._truncation, 1) \
+            + bits(self._auth_answer, 1) \
+            + bits(self._opcode, 4) \
+            + bits(self._is_response, 1)
+        
+        self._misc_2 \
+            = bits(self._rcode, 4) \
+            + bits(self._rsv, 3) \
+            + bits(self._recursion_avail, 1)
+        
+        assert len(self._misc_1) == len(self._misc_2) == 8
+        print("misc_1", int(self._misc_1, 2))
+        print("misc_2", int(self._misc_2, 2))
+        
+        self._header = struct.pack(
+            '!BBHHHH',
+            int(self._misc_2, 2),
+            int(self._misc_1, 2),
+            self._qdcount,
+            self._ancount,
+            self._nscount,
+            self._arcount)
+
     def to_bytes(self):
-        return self._header
+        print("req_id:%r" % self._query_id)
+        print("header:%r" % self._header)
+        return self._query_id + self._header
 
 
 class ResolveRequestAddress:
@@ -146,7 +160,7 @@ class ResolveRequestAddress:
 
 class QueryHeaderSection(HeaderSection):
     def __init__(self, qdcount):
-        super().__init__(True, QueryOpCode.QUERY, qdcount, 0, 0, 0, 0)
+        super().__init__(QueryResponse.QUERY, QueryOpCode.QUERY, 0, qdcount, 0, 0, 0)
 
 
 class ResolveRequest:
@@ -165,9 +179,244 @@ class ResolveRequest:
         for address in self._addresses:
             addresses += address.to_bytes()
         return self._header.to_bytes() \
-            + addresses \
-            + struct.pack('>H', self._qtype) \
-            + struct.pack('>H', self._qclass)
+               + addresses \
+               + struct.pack('>H', self._qtype) \
+               + struct.pack('>H', self._qclass)
+
+
+class HeaderField(Data):
+    
+    def __init__(self):
+        super().__init__(12)
+        self._fmt = '!HBBHHHH'
+    
+    def __call__(self, *args, **kwargs):
+        self._bytes = yield self._length
+        print("header bytes: ", self._bytes)
+
+
+class PointerField(Data):
+    pass
+
+
+class DomainNameField(Data):
+    
+    def __init__(self, offset):
+        self._length = 0
+        self._labels = []
+        self._offset = offset
+        super().__init__(self._length)
+    
+    def __call__(self) -> bytes:
+        
+        if self._offset:
+            data = yield (self._offset, 1)
+        else:
+            data = yield 1
+        while True:
+            
+            len_ = unpacks('!B', data)
+            if not len_:
+                break
+            
+            data = yield len_
+            self._labels.append(data)
+            
+            data = yield 1
+        return b'.'.join(self._labels)
+
+
+class IPField(Data):
+    def __init__(self, offset):
+        self._length = 0
+        self._offset = offset
+        super().__init__(self._length)
+    
+    def __call__(self) -> bytes:
+        
+        if self._offset:
+            data = yield (self._offset, 1)
+        else:
+            data = yield 1
+        print("data ===>", data)
+        while True:
+            
+            len_ = unpacks('!B', data)
+            if not len_:
+                break
+            
+            data = yield len_
+            self._bytes += data
+            
+            data = yield 1
+        return self._bytes
+
+
+class Question:
+    
+    def __init__(self, qname: bytes, qtype, qclass):
+        self._qname = unpacks("!%us" % len(qname), qname)
+        self._qtype = unpacks("!H", qtype)
+        self._qclass = unpacks("!H", qclass)
+    
+    @property
+    def qname(self):
+        return self._qname
+    
+    @property
+    def qtype(self):
+        return self._qtype
+    
+    @property
+    def qclass(self):
+        return self._qclass
+    
+    def __str__(self):
+        return "<Question %s %u %u>" % (self._qname, self._qtype, self._qclass)
+
+
+class Answer:
+    
+    def __init__(self, name: bytes, typ, clz, ttl, rlength, rdata):
+        self._name = unpacks("!%us" % len(name), name)
+        self._type = unpacks("!H", typ)
+        self._class = unpacks("!H", clz)
+        self._ttl = unpacks("!I", ttl)
+        self._rlength = unpacks("!H", rlength)
+        self._rdata = '.'.join([str(byte) for byte in rdata])
+
+    @property
+    def name(self):
+        return self._name
+    
+    @property
+    def type(self):
+        return self._type
+    
+    @property
+    def ttl(self):
+        return self._ttl
+    
+    @property
+    def rlength(self):
+        return self._rlength
+    
+    @property
+    def rdata(self):
+        return self._rdata
+    
+    def __str__(self):
+        return "<Answer name:%s type:%u ttl:%u rlength:%u rdata:%s>" \
+               % (self._name, self._type, self._ttl, self._rlength, self._rdata)
+
+
+class QuestionField(Data):
+    
+    def __init__(self, qdcount):
+        self._cnt = qdcount
+        self._length = 0
+        self._questions = []
+        super().__init__(self._length)
+    
+    def __call__(self, *args, **kwargs):
+        while self._cnt:
+            field = DomainNameField(0)
+            domain_name = yield from field()
+            qtype = yield 2
+            qclass = yield 2
+            print("%u: %r %r %r" % (self._cnt, domain_name, qtype, qclass))
+            self._questions.append(Question(domain_name, qtype, qclass))
+            self._cnt -= 1
+        return self._questions
+
+
+class NameField(Data):
+    
+    def __init__(self):
+        self._length = 0
+        super().__init__(self._length)
+    
+    def __call__(self):
+        length = yield 1
+        assert length == b'\xc0'
+        length += yield 1
+        pointer = unpacks("!H", length)
+        pointer = int(pointer & 0x3FFF)
+        field = DomainNameField(pointer)
+        domain_name = yield from field()
+        return domain_name
+
+
+class AnswerField(Data):
+    
+    def __init__(self, ancount):
+        self._cnt = ancount
+        self._answers = []
+        self._labels = []
+        self._length = 0
+        super().__init__(self._length)
+    
+    def __call__(self, *args, **kwargs):
+        while self._cnt:
+            field = NameField()
+            name_ = yield from field()
+            print("name:", name_)
+            _ = yield -1, 1
+            type_ = yield 2
+            class_ = yield 2
+            print(class_)
+            ttl_ = yield 4
+            print(ttl_)
+            rlength_ = yield 2
+            print(rlength_)
+            rdata_ = yield unpacks('!H', rlength_)
+            print("=================> rdata ===============>", rdata_)
+            self._answers.append(Answer(name_, type_, class_, ttl_, rlength_, rdata_))
+            
+            self._cnt -= 1
+        return self._answers
+
+
+class AuthorityField:
+    
+    def __init__(self, arcount):
+        pass
+
+
+class ResolveResponse(Response):
+    
+    def fields_gen(self):
+        ret_ = dict()
+        qdcount, ancount, arcount = yield ("header", HeaderField())
+        print("qdcount:%u ancount:%u arcount:%u" % (qdcount, ancount, arcount))
+        if qdcount:
+            questions = yield ("question", QuestionField(qdcount))
+            ret_["question"] = questions
+        if ancount:
+            answers = yield ("answer", AnswerField(ancount))
+            ret_["answers"] = answers
+        if arcount:
+            authorities = yield ("authority", AuthorityField(arcount))
+            ret_["authorities"] = authorities
+        
+        return ret_
+    
+    def gen(self):
+        fields = self.fields_gen()
+        dat = None
+        while True:
+            field_name, field = fields.send(dat)
+            print("%s:%r" % (field_name, field))
+            yield from field()
+            if field_name == "header":
+                req_id, _, _, qdcout, ancount, nscount, arcount = field.unpack()
+                dat = (qdcout, ancount, arcount)
+    
+    def pull(self, sock):
+        try:
+            pull_diagram_sock(self.gen(), sock)
+        except StopIteration as e:
+            return e.value
 
 
 class DNSResolver:
@@ -178,11 +427,16 @@ class DNSResolver:
 
 def main():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.SOL_UDP) as s:
-        resolve_req = ResolveRequest([b'www.google.com'], QType.QTYPE_A)
-        s.sendto(resolve_req.to_bytes(), (HOST, PORT))
-        resolved_, addr = s.recvfrom(1024)
-        print("resolved:", resolved_)
-        print("addr:", addr)
+        resolve_req = ResolveRequest([b'www.google.com'], QType.QTYPE_A).to_bytes()
+        print("req:%r" % resolve_req)
+        s.sendto(resolve_req, (HOST, PORT))
+        rsp = ResolveResponse()
+        print(rsp.pull(s))
+        # print(data, addr)
+        # print(struct.unpack('!B', data))
+        # resolved_, addr = s.recvfrom(1024)
+        # print("resolved:", resolved_)
+        # print("addr:", addr)
 
 
 if __name__ == '__main__':

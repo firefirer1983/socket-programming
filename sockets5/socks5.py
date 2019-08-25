@@ -1,9 +1,10 @@
-from contextlib import contextmanager
 import struct
 from enum import Enum, unique
 
+from utils.util import Data, UndefinedField, ignored_stop, Response
 
 SOCKS5_VER = 5
+
 
 @unique
 class Socks5AddressCmd(Enum):
@@ -27,25 +28,6 @@ class Socks5AuthMethod(Enum):
     IANA_ASSIGNED = 0x03
     PRIVATE_RSV = 0x80
     NO_ACCEPTABLE = 0xFF
-
-
-class Data:
-    
-    def __init__(self, length):
-        self._length = length
-        self._bytes = None
-        self._fmt = None
-    
-    def unpack(self):
-        return struct.unpack(self._fmt, self._bytes)[0]
-    
-    @property
-    def size(self):
-        return len(self._bytes)
-
-
-class UndefinedField:
-    pass
 
 
 class UnsignedIntegerField(Data):
@@ -73,14 +55,6 @@ class StringField(Data):
     
     def gen(self):
         self._bytes = yield self._length
-    
-
-@contextmanager
-def ignored_stop():
-    try:
-        yield
-    except StopIteration:
-        pass
 
 
 class CompositeField(Data):
@@ -159,28 +133,6 @@ class Socks5AddressRequest:
     
     def to_bytes(self) -> bytes:
         return self._data
-
-
-class Response:
-    
-    @staticmethod
-    def _pull_from_sock(g, sock):
-        data = None
-        while True:
-            try:
-                len_ = g.send(data)
-                data = sock.recv(len_)
-            except StopIteration:
-                break
-    
-    @staticmethod
-    def _pipe_to_field(g):
-        data = None
-        while True:
-            try:
-                data = yield g.send(data)
-            except StopIteration:
-                break
 
 
 class Socks5AddressRsp(Response):
