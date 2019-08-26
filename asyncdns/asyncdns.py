@@ -193,6 +193,7 @@ class HeaderField(Data):
     def __call__(self, *args, **kwargs):
         self._bytes = yield self._length
         print("header bytes: ", self._bytes)
+        return Header(*unpacks(self._fmt, self._bytes))
 
 
 class PointerField(Data):
@@ -238,7 +239,6 @@ class IPField(Data):
             data = yield (self._offset, 1)
         else:
             data = yield 1
-        print("data ===>", data)
         while True:
             
             len_ = unpacks('!B', data)
@@ -310,6 +310,32 @@ class DnsAnswer:
                % (self._name, self._type, self._ttl, self._rlength, self._rdata)
 
 
+class Header:
+    
+    def __init__(self, *args):
+        self._req_id, _, _, self._qdcount, self._ancount, self._nscount, self._arcount = args
+    
+    @property
+    def qdcount(self):
+        return self._qdcount
+    
+    @property
+    def ancount(self):
+        return self._ancount
+
+    @property
+    def nscount(self):
+        return self._nscount
+    
+    @property
+    def arcount(self):
+        return self._arcount
+    
+    @property
+    def req_id(self):
+        return self._req_id
+
+
 class QuestionField(Data):
     
     def __init__(self, qdcount):
@@ -368,8 +394,9 @@ class AnswerField(Data):
             rdata_ = yield unpacks('!H', rlength_)
             ans_ = DnsAnswer(name_, type_, class_, ttl_, rlength_, rdata_)
             self._answers.append(ans_)
-            
             self._cnt -= 1
+        for ans in self._answers:
+            print(str(ans))
         return self._answers
 
 
@@ -386,36 +413,25 @@ class ResolveResponse(Response):
     
     def fields_gen(self):
         ret_ = dict()
-        qdcount, ancount, arcount = yield ("header", HeaderField())
-        print("qdcount:%u ancount:%u arcount:%u" % (qdcount, ancount, arcount))
-        if qdcount:
-            questions = yield ("question", QuestionField(qdcount))
-            ret_["question"] = questions
-        if ancount:
-            answers = yield ("answer", AnswerField(ancount))
-            ret_["answers"] = answers
-        if arcount:
-            authorities = yield ("authority", AuthorityField(arcount))
-            ret_["authorities"] = authorities
-        
+        header = yield ("header", HeaderField())
+        print("qdcount:%u ancount:%u arcount:%u" % (header.qdcount, header.ancount, header.arcount))
+        if header.qdcount:
+            ret_["questions"] = yield ("question", QuestionField(header.qdcount))
+        if header.ancount:
+            ret_["answers"] = yield ("answer", AnswerField(header.ancount))
+        if header.arcount:
+            ret_["authorities"] = yield ("authority", AuthorityField(header.arcount))
         return ret_
     
-    def gen(self):
+    def __call__(self, *args, **kwargs):
         fields = self.fields_gen()
         dat = None
         while True:
             field_name, field = fields.send(dat)
-            print("%s:%r" % (field_name, field))
-            yield from field()
-            if field_name == "header":
-                req_id, _, _, qdcout, ancount, nscount, arcount = field.unpack()
-                dat = (qdcout, ancount, arcount)
+            dat = yield from field()
     
     def pull(self, sock):
-        try:
-            pull_diagram_sock(self.gen(), sock)
-        except StopIteration as e:
-            return e.value
+        return pull_diagram_sock(self, sock)
 
 
 class DNSResolver:
@@ -430,12 +446,11 @@ def main():
         print("req:%r" % resolve_req)
         s.sendto(resolve_req, (HOST, PORT))
         rsp = ResolveResponse()
-        print(rsp.pull(s))
-        # print(data, addr)
-        # print(struct.unpack('!B', data))
-        # resolved_, addr = s.recvfrom(1024)
-        # print("resolved:", resolved_)
-        # print("addr:", addr)
+        dns_result = rsp.pull(s)
+        for k, vs in dns_result.items():
+            print("%s:" % k)
+            for v in vs:
+                print("%s" % v)
 
 
 if __name__ == '__main__':

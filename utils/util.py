@@ -31,29 +31,16 @@ def ignored_stop():
         pass
 
 
-def pull_diagram_sock(g, sock):
+def pull_diagram_sock(rsp, sock):
+    
     data, addr = sock.recvfrom(1024)
-    print("pulled %u bytes from udp socket:" % len(data))
-    print(data)
-    prev_offs_ = 0
-    len_ = next(g)
-    offset = 0
+    c = Consumer(rsp(), data)
     while True:
-        octets = data[offset:len_ + offset]
-        print("offset:%u len:%u pull:" % (offset, len_), octets)
-        ret_ = g.send(octets)
-        if not isinstance(ret_, tuple):
-            offset += len_
-            len_ = ret_
-        else:
-            if ret_[0] > 0:
-                prev_offs_ = offset
-                offset = ret_[0]
-                len_ = ret_[1]
-            else:
-                offset = prev_offs_
-                len_ = ret_[1]
-
+        try:
+            c.push()
+        except StopIteration as e:
+            return e.value
+        
 
 def pull_stream_sock(g, sock):
     data = None
@@ -87,3 +74,41 @@ class Response:
 def unpacks(fmt, data):
     unpacked = struct.unpack(fmt, data)
     return unpacked[0] if len(unpacked) == 1 else unpacked
+
+
+class Consumer:
+    
+    def __init__(self, g, data):
+        self._pipe = g
+        self._wait_for = next(g)
+        self._offset = 0
+        self._preserve_offset = self._offset
+        self._bytes = data
+    
+    @property
+    def wait_for(self):
+        return self._wait_for
+    
+    @property
+    def offset(self):
+        return self._offset
+    
+    def push(self):
+        to_send = self._bytes[self._offset:self._offset + self._wait_for]
+        self._offset += self._wait_for
+        
+        ret_ = self._pipe.send(to_send)
+        if isinstance(ret_, tuple):
+            if ret_[0] > 0:
+                self._preserve_offset = self._offset
+                self._offset = ret_[0]
+                self._wait_for = ret_[1]
+            else:
+                self._offset = self._preserve_offset
+                self._wait_for = ret_[1]
+        else:
+            self._wait_for = ret_
+    
+    @property
+    def data(self):
+        return self._bytes[self._offset:self._offset + self._wait_for]
