@@ -360,15 +360,11 @@ class AnswerField(Data):
         while self._cnt:
             field = NameField()
             name_ = yield from field()
-            print("name:", name_)
             _ = yield -1, 1
             type_ = yield 2
             class_ = yield 2
-            print(class_)
             ttl_ = yield 4
-            print(ttl_)
             rlength_ = yield 2
-            print(rlength_)
             rdata_ = yield unpacks('!H', rlength_)
             ans_ = DnsAnswer(name_, type_, class_, ttl_, rlength_, rdata_)
             self._answers.append(ans_)
