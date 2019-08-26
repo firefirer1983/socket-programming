@@ -87,28 +87,3 @@ class Response:
 def unpacks(fmt, data):
     unpacked = struct.unpack(fmt, data)
     return unpacked[0] if len(unpacked) == 1 else unpacked
-
-
-class UdpBufCursor:
-    
-    def __init__(self):
-        self._save_point = 0
-        self._offset = 0
-    
-    @property
-    def offset(self):
-        return self._offset
-
-    def preserve(self, offs):
-        self._save_point = self._offset
-        self._offset = offs
-    
-    def restore(self):
-        self._offset = self._save_point
-
-    def forward(self, steps):
-        self._offset += steps
-    
-    def backward(self, steps):
-        self._offset -= steps
-

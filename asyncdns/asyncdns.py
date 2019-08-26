@@ -4,7 +4,7 @@ from collections import Iterable
 from enum import Enum, unique
 import struct
 
-from utils.util import Data, Response, pull_diagram_sock, pull_stream_sock, unpacks, UdpBufCursor
+from utils.util import Data, Response, pull_diagram_sock, pull_stream_sock, unpacks
 
 HOST = "8.8.8.8"
 PORT = 53
@@ -382,7 +382,7 @@ class AuthorityField:
 class ResolveResponse(Response):
     
     def __init__(self):
-        self._cursor = UdpBufCursor()
+        self._consumer = None
     
     def fields_gen(self):
         ret_ = dict()
