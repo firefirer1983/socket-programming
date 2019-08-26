@@ -118,8 +118,6 @@ class HeaderSection:
             + bits(self._recursion_avail, 1)
         
         assert len(self._misc_1) == len(self._misc_2) == 8
-        print("misc_1", int(self._misc_1, 2))
-        print("misc_2", int(self._misc_2, 2))
         
         self._header = struct.pack(
             '!BBHHHH',
@@ -131,8 +129,6 @@ class HeaderSection:
             self._arcount)
 
     def to_bytes(self):
-        print("req_id:%r" % self._query_id)
-        print("header:%r" % self._header)
         return self._query_id + self._header
 
 
@@ -150,11 +146,9 @@ class ResolveRequestAddress:
             self._address.append(bytes(chr(len_), 'utf8'))
             self._address.append(label)
         self._address.append(b'\0')
-        print(self._address)
         self._address = b''.join(self._address)
     
     def to_bytes(self):
-        print("address", self._address)
         return self._address
 
 
@@ -192,7 +186,6 @@ class HeaderField(Data):
     
     def __call__(self, *args, **kwargs):
         self._bytes = yield self._length
-        print("header bytes: ", self._bytes)
         return Header(*unpacks(self._fmt, self._bytes))
 
 
@@ -350,7 +343,6 @@ class QuestionField(Data):
             domain_name = yield from field()
             qtype = yield 2
             qclass = yield 2
-            print("%u: %r %r %r" % (self._cnt, domain_name, qtype, qclass))
             self._questions.append(Question(domain_name, qtype, qclass))
             self._cnt -= 1
         return self._questions
@@ -412,7 +404,6 @@ class ResolveResponse(Response):
     def fields_gen(self):
         ret_ = dict()
         header = yield ("header", HeaderField())
-        print("qdcount:%u ancount:%u arcount:%u" % (header.qdcount, header.ancount, header.arcount))
         if header.qdcount:
             ret_["questions"] = yield ("question", QuestionField(header.qdcount))
         if header.ancount:
@@ -441,7 +432,6 @@ class DNSResolver:
 def main():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.SOL_UDP) as s:
         resolve_req = ResolveRequest([b'www.google.com'], QType.QTYPE_A).to_bytes()
-        print("req:%r" % resolve_req)
         s.sendto(resolve_req, (HOST, PORT))
         rsp = ResolveResponse()
         dns_result = rsp.pull(s)
