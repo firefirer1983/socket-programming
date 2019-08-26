@@ -4,7 +4,7 @@ from collections import Iterable
 from enum import Enum, unique
 import struct
 
-from utils.util import Data, Response, pull_diagram_sock, pull_stream_sock, unpacks
+from utils.util import Data, Response, pull_diagram_sock, pull_stream_sock, unpacks, UdpBufCursor
 
 HOST = "8.8.8.8"
 PORT = 53
@@ -179,9 +179,9 @@ class ResolveRequest:
         for address in self._addresses:
             addresses += address.to_bytes()
         return self._header.to_bytes() \
-               + addresses \
-               + struct.pack('>H', self._qtype) \
-               + struct.pack('>H', self._qclass)
+            + addresses \
+            + struct.pack('>H', self._qtype) \
+            + struct.pack('>H', self._qclass)
 
 
 class HeaderField(Data):
@@ -275,9 +275,9 @@ class Question:
         return "<Question %s %u %u>" % (self._qname, self._qtype, self._qclass)
 
 
-class Answer:
+class DnsAnswer:
     
-    def __init__(self, name: bytes, typ, clz, ttl, rlength, rdata):
+    def __init__(self, name, typ, clz, ttl, rlength, rdata):
         self._name = unpacks("!%us" % len(name), name)
         self._type = unpacks("!H", typ)
         self._class = unpacks("!H", clz)
@@ -370,8 +370,8 @@ class AnswerField(Data):
             rlength_ = yield 2
             print(rlength_)
             rdata_ = yield unpacks('!H', rlength_)
-            print("=================> rdata ===============>", rdata_)
-            self._answers.append(Answer(name_, type_, class_, ttl_, rlength_, rdata_))
+            ans_ = DnsAnswer(name_, type_, class_, ttl_, rlength_, rdata_)
+            self._answers.append(ans_)
             
             self._cnt -= 1
         return self._answers
@@ -384,6 +384,9 @@ class AuthorityField:
 
 
 class ResolveResponse(Response):
+    
+    def __init__(self):
+        self._cursor = UdpBufCursor()
     
     def fields_gen(self):
         ret_ = dict()
