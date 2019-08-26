@@ -386,7 +386,7 @@ class AnswerField(Data):
         while self._cnt:
             field = NameField()
             name_ = yield from field()
-            _ = yield -1, 1
+            _ = yield -1, 0
             type_ = yield 2
             class_ = yield 2
             ttl_ = yield 4
@@ -395,8 +395,6 @@ class AnswerField(Data):
             ans_ = DnsAnswer(name_, type_, class_, ttl_, rlength_, rdata_)
             self._answers.append(ans_)
             self._cnt -= 1
-        for ans in self._answers:
-            print(str(ans))
         return self._answers
 
 
