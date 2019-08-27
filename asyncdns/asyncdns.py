@@ -4,7 +4,9 @@ from collections import Iterable
 from enum import Enum, unique
 import struct
 
-from utils.util import Data, Response, pull_diagram_sock, pull_stream_sock, unpacks
+from utils.util import Response, pull_diagram_sock, pull_stream_sock, unpacks, RollBackCursor, JumpCursor, \
+    BackwardCursor
+from datafields import I8ArrayField, UnsignedIntegerField, RawBytesField
 
 HOST = "8.8.8.8"
 PORT = 53
@@ -178,79 +180,12 @@ class ResolveRequest:
             + struct.pack('>H', self._qclass)
 
 
-class HeaderField(Data):
-    
-    def __init__(self):
-        super().__init__(12)
-        self._fmt = '!HBBHHHH'
-    
-    def __call__(self, *args, **kwargs):
-        self._bytes = yield self._length
-        return Header(*unpacks(self._fmt, self._bytes))
-
-
-class PointerField(Data):
-    pass
-
-
-class DomainNameField(Data):
-    
-    def __init__(self, offset):
-        self._length = 0
-        self._labels = []
-        self._offset = offset
-        super().__init__(self._length)
-    
-    def __call__(self) -> bytes:
-        
-        if self._offset:
-            data = yield (self._offset, 1)
-        else:
-            data = yield 1
-        while True:
-            
-            len_ = unpacks('!B', data)
-            if not len_:
-                break
-            
-            data = yield len_
-            self._labels.append(data)
-            
-            data = yield 1
-        return b'.'.join(self._labels)
-
-
-class IPField(Data):
-    def __init__(self, offset):
-        self._length = 0
-        self._offset = offset
-        super().__init__(self._length)
-    
-    def __call__(self) -> bytes:
-        
-        if self._offset:
-            data = yield (self._offset, 1)
-        else:
-            data = yield 1
-        while True:
-            
-            len_ = unpacks('!B', data)
-            if not len_:
-                break
-            
-            data = yield len_
-            self._bytes += data
-            
-            data = yield 1
-        return self._bytes
-
-
 class Question:
     
-    def __init__(self, qname: bytes, qtype, qclass):
-        self._qname = unpacks("!%us" % len(qname), qname)
-        self._qtype = unpacks("!H", qtype)
-        self._qclass = unpacks("!H", qclass)
+    def __init__(self, qname, qtype, qclass):
+        self._qname = qname
+        self._qtype = qtype
+        self._qclass = qclass
     
     @property
     def qname(self):
@@ -271,11 +206,11 @@ class Question:
 class DnsAnswer:
     
     def __init__(self, name, typ, clz, ttl, rlength, rdata):
-        self._name = unpacks("!%us" % len(name), name)
-        self._type = unpacks("!H", typ)
-        self._class = unpacks("!H", clz)
-        self._ttl = unpacks("!I", ttl)
-        self._rlength = unpacks("!H", rlength)
+        self._name = name
+        self._type = typ
+        self._class = clz
+        self._ttl = ttl
+        self._rlength = rlength
         self._rdata = '.'.join([str(byte) for byte in rdata])
 
     @property
@@ -328,66 +263,98 @@ class Header:
     def req_id(self):
         return self._req_id
 
+    def __str__(self):
+        return "<Header qdcount:%u ancount:%u nscount:%u>" % (
+            self.qdcount, self.ancount, self.nscount)
 
-class QuestionField(Data):
-    
-    def __init__(self, qdcount):
-        self._cnt = qdcount
-        self._length = 0
-        self._questions = []
-        super().__init__(self._length)
+
+class HeaderFieldFactory:
     
     def __call__(self, *args, **kwargs):
-        while self._cnt:
-            field = DomainNameField(0)
-            domain_name = yield from field()
-            qtype = yield 2
-            qclass = yield 2
-            self._questions.append(Question(domain_name, qtype, qclass))
-            self._cnt -= 1
-        return self._questions
+        fmt_ = '!HBBHHHH'
+        bytes_ = yield 12
+        return Header(*unpacks(fmt_, bytes_))
 
 
-class NameField(Data):
+HeaderField = HeaderFieldFactory()
+
+
+class PointerField:
+    pass
+
+
+class DomainNameFactory:
     
-    def __init__(self):
-        self._length = 0
-        super().__init__(self._length)
+    def __call__(self, offset=None) -> bytes:
+        labels = []
+        if offset:
+            yield JumpCursor(offset)
+
+        while True:
+            
+            len_ = yield from UnsignedIntegerField(1)
+            if not len_:
+                break
+            
+            data = yield from RawBytesField(len_)
+            labels.append(data)
+            
+        return b'.'.join(labels) if len(labels) else b''
+
+
+DomainNameField = DomainNameFactory()
+
+
+class QuestionFactory:
+    
+    def __call__(self, qdcount):
+        questions_ = []
+        while qdcount:
+            domain_name = yield from DomainNameField()
+            qtype = yield from UnsignedIntegerField(2)
+            qclass = yield from UnsignedIntegerField(2)
+            questions_.append(Question(domain_name, qtype, qclass))
+            qdcount -= 1
+        return questions_
+
+
+QuestionField = QuestionFactory()
+
+
+class NameFieldFactory:
     
     def __call__(self):
-        length = yield 1
-        assert length == b'\xc0'
-        length += yield 1
-        pointer = unpacks("!H", length)
+        flag = yield from RawBytesField(1)
+        assert flag == b'\xc0'
+        yield BackwardCursor(1)
+        pointer = yield from UnsignedIntegerField(2)
         pointer = int(pointer & 0x3FFF)
-        field = DomainNameField(pointer)
-        domain_name = yield from field()
+        domain_name = yield from DomainNameField(pointer)
         return domain_name
 
 
-class AnswerField(Data):
+NameField = NameFieldFactory()
+
+
+class AnswerFactory:
     
-    def __init__(self, ancount):
-        self._cnt = ancount
-        self._answers = []
-        self._labels = []
-        self._length = 0
-        super().__init__(self._length)
-    
-    def __call__(self, *args, **kwargs):
-        while self._cnt:
-            field = NameField()
-            name_ = yield from field()
-            _ = yield -1, 0
-            type_ = yield 2
-            class_ = yield 2
-            ttl_ = yield 4
-            rlength_ = yield 2
-            rdata_ = yield unpacks('!H', rlength_)
+    def __call__(self, ancount):
+        answers_ = []
+        while ancount:
+            name_ = yield from NameField()
+            yield RollBackCursor()
+            type_ = yield from UnsignedIntegerField(2)
+            class_ = yield from UnsignedIntegerField(2)
+            ttl_ = yield from UnsignedIntegerField(4)
+            rlength_ = yield from UnsignedIntegerField(2)
+            rdata_ = yield from I8ArrayField(rlength_)
             ans_ = DnsAnswer(name_, type_, class_, ttl_, rlength_, rdata_)
-            self._answers.append(ans_)
-            self._cnt -= 1
-        return self._answers
+            answers_.append(ans_)
+            ancount -= 1
+        return answers_
+
+
+AnswerField = AnswerFactory()
 
 
 class AuthorityField:
@@ -401,24 +368,28 @@ class ResolveResponse(Response):
     def __init__(self):
         self._consumer = None
     
-    def fields_gen(self):
-        ret_ = dict()
-        header = yield ("header", HeaderField())
-        if header.qdcount:
-            ret_["questions"] = yield ("question", QuestionField(header.qdcount))
-        if header.ancount:
-            ret_["answers"] = yield ("answer", AnswerField(header.ancount))
-        if header.arcount:
-            ret_["authorities"] = yield ("authority", AuthorityField(header.arcount))
-        return ret_
-    
     def __call__(self, *args, **kwargs):
-        fields = self.fields_gen()
-        dat = None
-        while True:
-            field_name, field = fields.send(dat)
-            dat = yield from field()
-    
+        header = yield from HeaderField()
+        if header.qdcount:
+            questions = yield from QuestionField(header.qdcount)
+        else:
+            questions = []
+        if header.ancount:
+            answers = yield from AnswerField(header.ancount)
+        else:
+            answers = []
+        if header.arcount:
+            authorities = yield from AuthorityField(header.arcount)
+        else:
+            authorities = []
+            
+        return dict(
+            header=header,
+            questions=questions,
+            answers=answers,
+            authorities=authorities
+        )
+
     def pull(self, sock):
         return pull_diagram_sock(self, sock)
 
@@ -437,8 +408,11 @@ def main():
         dns_result = rsp.pull(s)
         for k, vs in dns_result.items():
             print("%s:" % k)
-            for v in vs:
-                print("%s" % v)
+            if isinstance(vs, Iterable):
+                for v in vs:
+                    print("%s" % v)
+            else:
+                print("%s" % vs)
 
 
 if __name__ == '__main__':

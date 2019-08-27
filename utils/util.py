@@ -3,26 +3,6 @@ import socket
 from contextlib import contextmanager
 
 
-class Data:
-    
-    def __init__(self, length):
-        self._length = length
-        self._bytes = b''
-        self._fmt = None
-    
-    def unpack(self):
-        res_ = struct.unpack(self._fmt, self._bytes)
-        return res_ if len(res_) > 1 else res_[0]
-    
-    @property
-    def size(self):
-        return len(self._bytes)
-
-
-class UndefinedField:
-    pass
-
-
 @contextmanager
 def ignored_stop():
     try:
@@ -34,10 +14,10 @@ def ignored_stop():
 def pull_diagram_sock(rsp, sock):
     
     data, addr = sock.recvfrom(1024)
-    c = Consumer(rsp(), data)
+    p = Pool(rsp(), data)
     while True:
         try:
-            c.push()
+            p.pump()
         except StopIteration as e:
             return e.value
         
@@ -76,39 +56,73 @@ def unpacks(fmt, data):
     return unpacked[0] if len(unpacked) == 1 else unpacked
 
 
-class Consumer:
+class Pool:
     
     def __init__(self, g, data):
         self._pipe = g
-        self._wait_for = next(g)
+        self.cursor = next(g)
         self._offset = 0
         self._preserve_offset = self._offset
         self._bytes = data
     
     @property
-    def wait_for(self):
-        return self._wait_for
-    
-    @property
-    def offset(self):
-        return self._offset
-    
-    def push(self):
+    def cursor(self):
+        raise RuntimeError("cursor not readable")
+
+    def pump(self):
         to_send = self._bytes[self._offset:self._offset + self._wait_for]
         self._offset += self._wait_for
+        self.cursor = self._pipe.send(to_send)
         
-        ret_ = self._pipe.send(to_send)
-        if isinstance(ret_, tuple):
-            if ret_[0] > 0:
-                self._preserve_offset = self._offset
-                self._offset = ret_[0]
-                self._wait_for = ret_[1]
-            else:
-                self._offset = self._preserve_offset
-                self._wait_for = ret_[1]
+    @cursor.setter
+    def cursor(self, c):
+        if isinstance(c, RollBackCursor):
+            self._offset = self._preserve_offset
+            self._wait_for = 0
+        elif isinstance(c, ForwardCursor) or isinstance(c, BackwardCursor):
+            self._offset += int(c)
+            self._wait_for = 0
+        elif isinstance(c, JumpCursor):
+            self._preserve_offset = self._offset
+            self._offset = int(c)
+            self._wait_for = 0
+        elif isinstance(c, int):
+            self._wait_for = c
         else:
-            self._wait_for = ret_
+            raise RuntimeError("Unknown cursor type:%r" % c)
     
     @property
     def data(self):
         return self._bytes[self._offset:self._offset + self._wait_for]
+
+
+class Cursor:
+    
+    def __init__(self, offset):
+        self._offset = offset
+    
+    def __int__(self):
+        return self._offset
+
+
+class ForwardCursor(Cursor):
+    
+    def __init__(self, offset):
+        super().__init__(offset)
+
+
+class BackwardCursor(Cursor):
+    def __init__(self, offset):
+        super().__init__(-offset)
+
+
+class RollBackCursor(Cursor):
+    
+    def __init__(self):
+        super().__init__(0)
+
+
+class JumpCursor(Cursor):
+    def __init__(self, offset):
+        super().__init__(offset)
+

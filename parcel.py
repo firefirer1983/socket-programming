@@ -1,4 +1,4 @@
-from utils.util import Consumer
+from utils.util import Pool
 
 
 def dns_resolve():
@@ -10,11 +10,11 @@ def dns_resolve():
     print(d)
 
 
-c = Consumer(dns_resolve(), b'\x00\x01\x02\x03\x04\x05\x06')
+c = Pool(dns_resolve(), b'\x00\x01\x02\x03\x04\x05\x06')
 
 while True:
     try:
-        c.push()
+        c.pump()
     except StopIteration:
         break
 assert c.data == b'\06'

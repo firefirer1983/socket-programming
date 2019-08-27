@@ -1,7 +1,8 @@
 import struct
 from enum import Enum, unique
 
-from utils.util import Data, UndefinedField, ignored_stop, Response
+from utils.util import Data, ignored_stop, Response
+from datafields import UnsignedIntegerField, StringField, UndefinedField
 
 SOCKS5_VER = 5
 
@@ -28,33 +29,6 @@ class Socks5AuthMethod(Enum):
     IANA_ASSIGNED = 0x03
     PRIVATE_RSV = 0x80
     NO_ACCEPTABLE = 0xFF
-
-
-class UnsignedIntegerField(Data):
-    
-    def __init__(self, length):
-        super().__init__(length)
-        if self._length == 1:
-            self._fmt = '>' + 'B'
-        elif self._length == 2:
-            self._fmt = '>' + 'H'
-        elif self._length == 4:
-            self._fmt = '>' + 'I'
-        elif self._length == 8:
-            self._fmt = '>' + 'Q'
-    
-    def gen(self):
-        self._bytes = yield self._length
-    
-
-class StringField(Data):
-    
-    def __init__(self, length):
-        super().__init__(length)
-        self._fmt = '>' + '%u' % length + 's'
-    
-    def gen(self):
-        self._bytes = yield self._length
 
 
 class CompositeField(Data):
@@ -85,16 +59,6 @@ class CompositeField(Data):
             print("send again")
         
         self._bytes = yield gen.send(data.length)
-
-
-class IntegerArrayField(Data):
-    
-    def __init__(self, length):
-        super().__init__(length)
-        self._fmt = '>' + 'B' * length
-    
-    def gen(self):
-        self._bytes = yield self._length
 
 
 class DoneUnpacked(StopIteration):
