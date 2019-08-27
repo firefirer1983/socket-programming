@@ -1,6 +1,6 @@
 import os
 import socket
-from collections import Iterable
+from collections import Iterable, namedtuple
 from enum import Enum, unique
 import struct
 
@@ -180,100 +180,29 @@ class ResolveRequest:
             + struct.pack('>H', self._qclass)
 
 
-class Question:
-    
-    def __init__(self, qname, qtype, qclass):
-        self._qname = qname
-        self._qtype = qtype
-        self._qclass = qclass
-    
-    @property
-    def qname(self):
-        return self._qname
-    
-    @property
-    def qtype(self):
-        return self._qtype
-    
-    @property
-    def qclass(self):
-        return self._qclass
-    
-    def __str__(self):
-        return "<Question %s %u %u>" % (self._qname, self._qtype, self._qclass)
+class Question(namedtuple('question', 'qname qtype qclass')):
+    pass
 
 
-class DnsAnswer:
-    
-    def __init__(self, name, typ, clz, ttl, rlength, rdata):
-        self._name = name
-        self._type = typ
-        self._class = clz
-        self._ttl = ttl
-        self._rlength = rlength
-        self._rdata = '.'.join([str(byte) for byte in rdata])
-
-    @property
-    def name(self):
-        return self._name
-    
-    @property
-    def type(self):
-        return self._type
-    
-    @property
-    def ttl(self):
-        return self._ttl
-    
-    @property
-    def rlength(self):
-        return self._rlength
-    
-    @property
-    def rdata(self):
-        return self._rdata
-    
-    def __str__(self):
-        return "<Answer name:%s type:%u ttl:%u rlength:%u rdata:%s>" \
-               % (self._name, self._type, self._ttl, self._rlength, self._rdata)
+class DnsAnswer(namedtuple("DnsAnswer", "name type clz ttl rlength rdata")):
+    pass
 
 
-class Header:
-    
-    def __init__(self, *args):
-        self._req_id, _, _, self._qdcount, self._ancount, self._nscount, self._arcount = args
-    
-    @property
-    def qdcount(self):
-        return self._qdcount
-    
-    @property
-    def ancount(self):
-        return self._ancount
-
-    @property
-    def nscount(self):
-        return self._nscount
-    
-    @property
-    def arcount(self):
-        return self._arcount
-    
-    @property
-    def req_id(self):
-        return self._req_id
-
-    def __str__(self):
-        return "<Header qdcount:%u ancount:%u nscount:%u>" % (
-            self.qdcount, self.ancount, self.nscount)
+class Header(namedtuple("Header", "id misc1 misc2 qdcount ancount nscount arcount")):
+    pass
 
 
 class HeaderFieldFactory:
     
     def __call__(self, *args, **kwargs):
-        fmt_ = '!HBBHHHH'
-        bytes_ = yield 12
-        return Header(*unpacks(fmt_, bytes_))
+        id_ = yield from UnsignedIntegerField(2)
+        misc_2 = yield from RawBytesField(1)
+        misc_1 = yield from RawBytesField(1)
+        qdcount = yield from UnsignedIntegerField(2)
+        ancount = yield from UnsignedIntegerField(2)
+        nscount = yield from UnsignedIntegerField(2)
+        arcount = yield from UnsignedIntegerField(2)
+        return Header(id_, misc_2, misc_1, qdcount, ancount, nscount, arcount)
 
 
 HeaderField = HeaderFieldFactory()
@@ -287,11 +216,7 @@ class DomainNameFactory:
     
     def __call__(self, offset=None) -> bytes:
         labels = []
-        if offset:
-            yield JumpCursor(offset)
-
         while True:
-            
             len_ = yield from UnsignedIntegerField(1)
             if not len_:
                 break
@@ -329,7 +254,9 @@ class NameFieldFactory:
         yield BackwardCursor(1)
         pointer = yield from UnsignedIntegerField(2)
         pointer = int(pointer & 0x3FFF)
-        domain_name = yield from DomainNameField(pointer)
+        yield JumpCursor(pointer)
+        domain_name = yield from DomainNameField()
+        yield RollBackCursor()
         return domain_name
 
 
@@ -342,7 +269,6 @@ class AnswerFactory:
         answers_ = []
         while ancount:
             name_ = yield from NameField()
-            yield RollBackCursor()
             type_ = yield from UnsignedIntegerField(2)
             class_ = yield from UnsignedIntegerField(2)
             ttl_ = yield from UnsignedIntegerField(4)
@@ -370,25 +296,25 @@ class ResolveResponse(Response):
     
     def __call__(self, *args, **kwargs):
         header = yield from HeaderField()
+        print("******************header", header)
         if header.qdcount:
             questions = yield from QuestionField(header.qdcount)
+            for q in questions:
+                print("******************question", q)
         else:
             questions = []
         if header.ancount:
             answers = yield from AnswerField(header.ancount)
+            for ans in answers:
+                print("******************answer", ans)
         else:
             answers = []
         if header.arcount:
             authorities = yield from AuthorityField(header.arcount)
         else:
             authorities = []
-            
-        return dict(
-            header=header,
-            questions=questions,
-            answers=answers,
-            authorities=authorities
-        )
+        
+        return header, questions, answers, authorities
 
     def pull(self, sock):
         return pull_diagram_sock(self, sock)
@@ -405,14 +331,11 @@ def main():
         resolve_req = ResolveRequest([b'www.google.com'], QType.QTYPE_A).to_bytes()
         s.sendto(resolve_req, (HOST, PORT))
         rsp = ResolveResponse()
-        dns_result = rsp.pull(s)
-        for k, vs in dns_result.items():
-            print("%s:" % k)
-            if isinstance(vs, Iterable):
-                for v in vs:
-                    print("%s" % v)
-            else:
-                print("%s" % vs)
+        header, questions, answers, authorities = rsp.pull(s)
+        print(header)
+        print(questions)
+        print(answers)
+        print(authorities)
 
 
 if __name__ == '__main__':
