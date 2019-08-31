@@ -54,7 +54,7 @@ class EventLoop:
         
     def poll(self, timeout):
         events = self._select.select(timeout=timeout)
-        return [(key.fileobj, key.raw_bytes, mask) for key, mask in events]
+        return [(key.fileobj, key.data, mask) for key, mask in events]
     
     def add(self, f, mode, handler):
         self._select.register(f, mode, handler)

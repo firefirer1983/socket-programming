@@ -1,8 +1,10 @@
 import struct
 from enum import Enum, unique
 
-from utils.util import Data, ignored_stop, Response
-from datafields import UnsignedIntegerField, StringField, UndefinedField
+from exc import Sock5AuthorizeErr
+from utils.util import ignored_stop, Response
+from datafields import UnsignedIntegerField, StringField, UndefinedField, \
+    I8ArrayField, RawBytesField
 
 SOCKS5_VER = 5
 
@@ -31,7 +33,7 @@ class Socks5AuthMethod(Enum):
     NO_ACCEPTABLE = 0xFF
 
 
-class CompositeField(Data):
+class CompositeField:
     
     def __init__(self, init_length):
         super().__init__(init_length)
@@ -141,3 +143,11 @@ class Socks5AuthRsp(Response):
     def pull(self, sock):
         self._pull_from_sock(self.gen(), sock)
         return {k: v.unpack() for k, v in self._fields.items()}
+
+    def __call__(self, octets):
+        ver = yield from RawBytesField(1)
+        if ver != b"\x05":
+            raise Sock5AuthorizeErr("not ver sock5")
+        nmethod = yield from UnsignedIntegerField(1)
+        methods = yield from I8ArrayField(nmethod)
+        
