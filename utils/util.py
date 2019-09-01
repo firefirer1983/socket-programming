@@ -177,8 +177,9 @@ def pull_from_sock(field, sock):
             print("%r: %u bytes" % (dat_, len_))
     except StopIteration as e:
         return e.value
-    except Exception:
-        return None, None
+    except Exception as e:
+        log.exception(e)
+        return None
 
 
 async def async_pull(field, loop, sock):
@@ -192,3 +193,4 @@ async def async_pull(field, loop, sock):
     except Exception as e:
         log.exception(e)
         return None
+
