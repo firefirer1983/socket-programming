@@ -17,9 +17,9 @@ async def sock_handler(loop, sock):
     auth_req = await async_pull(Socks5AuthReqGen(), loop, sock)
     print("auth_req:", auth_req)
     await loop.sock_sendall(
-        sock, Socks5AuthRsp(Socks5AuthMethod.NO_AUTH).to_bytes()
+        sock, Socks5AuthRsp(Socks5AuthMethod.NO_AUTH)
     )
-    print("auth_rsp:", Socks5AuthRsp(Socks5AuthMethod.NO_AUTH).to_bytes())
+    print("auth_rsp:", Socks5AuthRsp(Socks5AuthMethod.NO_AUTH))
     addr_req = await async_pull(Socks5AddrReqGen(), loop, sock)
     print("addr_req:", addr_req)
     rsp = Socks5AddrRsp(

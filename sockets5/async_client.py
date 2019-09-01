@@ -15,7 +15,7 @@ from utils.util import async_pull
 log = get_logger("socks5-client")
 
 HOST = "127.0.0.1"
-PORT = 1080
+PORT = 1081
 
 
 async def client(loop):

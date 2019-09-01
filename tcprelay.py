@@ -32,6 +32,7 @@ class TCPRelay:
 class TCPRelayHandler:
     def __init__(self, loop, is_sslocal, sock):
         self._sock = sock
+        self._remote_sock = None
         self._loop = loop
         self._is_sslocal = is_sslocal
 
@@ -39,24 +40,37 @@ class TCPRelayHandler:
         auth_req = await async_pull(Socks5AuthReqGen(), self._loop, self._sock)
         print("auth_req:", auth_req)
         await self._loop.sock_sendall(
-            self._sock, Socks5AuthRsp(Socks5AuthMethod.NO_AUTH).to_bytes()
+            self._sock, Socks5AuthRsp(Socks5AuthMethod.NO_AUTH)
         )
         addr_req = await async_pull(Socks5AddrReqGen(), self._loop, self._sock)
         print("addr_req:", addr_req)
-        rsp = Socks5AddrRsp(
+        await self._loop.sock_sendall(self._sock, Socks5AddrRsp(
             Socks5AddressAddrType.IP4, b"\x00.\x00.\x00.\x00", 5677
-        )
-        print("rsp: ", rsp)
-        addr_rsp = rsp.to_bytes()
-        print("addr rsp: %r" % addr_rsp)
-        await self._loop.sock_sendall(self._sock, addr_rsp)
-        return addr_rsp
-
-    async def relay(self):
-        auth_res = await self.authorize()
-        print("auth_res:", auth_res)
-        if not auth_res:
-            return None
+        ))
+        return addr_req
         
+    async def relay(self):
+        res = await self.authorize()
+        print("addr: %s port:%u" % (res.addr, res.port))
+        if not res:
+            return None
+        await self.address(res.addr, res.port)
+        self._loop.create_task(self.upstream())
+        self._loop.create_task(self.downstream())
+        
+    async def address(self, addr, port):
+        self._remote_sock = await self._loop.sock_connect((addr, port))
+        self._loop.sock_sendall()
+        
+    async def upstream(self):
+        while True:
+            up_ = await self._loop.sock_recv(self._sock, 4096)
+            await self._loop.sock_sendall(self._remote_sock, up_)
+    
+    async def downstream(self):
+        while True:
+            down_ = await self._remote_sock.sock_recv(self._remote_sock, 4096)
+            await self._loop.sock_sendall(self._sock, down_)
+
         
 

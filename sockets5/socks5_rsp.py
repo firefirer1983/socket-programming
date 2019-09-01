@@ -6,42 +6,28 @@ from sockets5.enums import Socks5RepType
 
 
 class Socks5AuthRsp:
-    def __init__(self, auth_method):
-        self._ver = 5
-        self._auth_method = auth_method
-
-    def to_bytes(self):
-        return pack("!BB", self._ver, self._auth_method.value)
+    def __new__(cls, auth_method):
+        ver = 5
+        auth_method = auth_method
+        return pack("!BB", ver, auth_method.value)
 
 
 class Socks5AddrRsp:
-    def __init__(self, atyp, addr, port):
-        self._ver = 5
-        self._rep = Socks5RepType.SUCCEEDED.value
-        self._rsv = 0
-        self._atyp = atyp.value
-        self._addr = addr
-        self._port = port
-        print("typeof port:", type(self._port))
-        print(
-            self._ver, self._rep, self._rsv, self._atyp, self._addr, self._port
-        )
-
-    def to_bytes(self):
-        if isinstance(self._addr, str):
-            labels = [int(p) for p in self._addr.split(".")]
+    def __new__(cls, atyp, addr, port):
+        ver = 5
+        rep = Socks5RepType.SUCCEEDED.value
+        rsv = 0
+        atyp = atyp.value
+        addr = addr
+        port = port
+        print("typeof port:", type(port))
+        print(ver, rep, rsv, atyp, addr, port)
+        if isinstance(addr, str):
+            labels = [int(p) for p in addr.split(".")]
         else:
-            labels = [ord(p) for p in self._addr.split(b".")]
+            labels = [ord(p) for p in addr.split(b".")]
         fmt_ = "!BBBB" + "B" * len(labels) + "H"
-        return pack(
-            fmt_,
-            self._ver,
-            self._rep,
-            self._rsv,
-            self._atyp,
-            *labels,
-            self._port
-        )
+        return pack(fmt_, ver, rep, rsv, atyp, *labels, port)
 
 
 AuthRsp = namedtuple("AuthRsp", "ver method")
