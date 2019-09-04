@@ -167,19 +167,19 @@ def recognizable_ip(ip_str):
     else:
         return False
 
-
-def pull_from_sock(field, sock):
-    dat_ = None
-    try:
-        while True:
-            len_ = field.send(dat_)
-            dat_ = sock.recv(len_)
-            print("%r: %u bytes" % (dat_, len_))
-    except StopIteration as e:
-        return e.value
-    except Exception as e:
-        log.exception(e)
-        return None
+#
+# def pull_from_sock(field, sock):
+#     dat_ = None
+#     try:
+#         while True:
+#             len_ = field.send(dat_)
+#             dat_ = sock.recv(len_)
+#             print("%r: %u bytes" % (dat_, len_))
+#     except StopIteration as e:
+#         return e.value
+#     except Exception as e:
+#         log.exception(e)
+#         return None
 
 
 async def async_pull(field, loop, sock):

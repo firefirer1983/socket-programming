@@ -20,8 +20,6 @@ class Socks5AddrRsp:
         atyp = atyp.value
         addr = addr
         port = port
-        print("typeof port:", type(port))
-        print(ver, rep, rsv, atyp, addr, port)
         if isinstance(addr, str):
             labels = [int(p) for p in addr.split(".")]
         else:

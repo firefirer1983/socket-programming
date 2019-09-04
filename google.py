@@ -15,7 +15,7 @@ from utils.util import async_pull
 log = get_logger("socks5-client")
 
 HOST = "127.0.0.1"
-PORT = 1080
+PORT = 1081
 
 http_req = """GET %s HTTP/1.1\r\n
 Host: %s\r\n
@@ -54,14 +54,15 @@ async def client(loop):
             b"google.com",
             80,
         ).to_bytes()
+        print("start send address request")
         await loop.sock_sendall(sock, addr_req)
+        print("start send address request done")
         addr_rsp = await async_pull(Socks5AddrRspGen(), loop, sock)
         req = http_get("google.com", "/")
         print(req)
         await loop.sock_sendall(sock, req.encode("utf8"))
         html = await loop.sock_recv(sock, 4096)
         print("html:", html.decode("utf8"))
-        loop.stop()
 
 
 if __name__ == "__main__":
