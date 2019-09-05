@@ -1,4 +1,5 @@
 from collections.__init__ import namedtuple
+from enum import Enum
 from struct import pack
 
 from datafields import UnsignedIntegerField, RawBytesField, StringField
@@ -17,7 +18,8 @@ class Socks5AddrRsp:
         ver = 5
         rep = Socks5RepType.SUCCEEDED.value
         rsv = 0
-        atyp = atyp.value
+        if isinstance(atyp, Enum):
+            atyp = atyp.value
         addr = addr
         port = port
         if isinstance(addr, str):
@@ -29,7 +31,26 @@ class Socks5AddrRsp:
 
 
 AuthRsp = namedtuple("AuthRsp", "ver method")
-AddrRsp = namedtuple("AddrRsp", "ver rep rsv atyp addr port")
+
+
+class AddrRsp(namedtuple("AddrRsp", "ver rep rsv atyp addr port")):
+    def to_bytes(self):
+        print(
+            "======> ",
+            self.ver,
+            self.rep,
+            self.rsv,
+            self.atyp,
+            self.addr,
+            self.port,
+        )
+        return (
+            pack("!BB", self.ver, self.rep)
+            + self.rsv
+            + self.atyp
+            + self.addr
+            + pack("!H", self.port)
+        )
 
 
 class Socks5AddrRspGen:

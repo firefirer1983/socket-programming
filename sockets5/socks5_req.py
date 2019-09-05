@@ -12,12 +12,12 @@ class AddrReq:
     def __init__(self, ver, cmd, srv, atyp, addr, port):
         self._ver = ver
         self._cmd = cmd
-        self._srv = srv
+        self._rsv = srv
         self._atyp = atyp
         self._addr = addr
         self._port = port
         print(
-            self._ver, self._cmd, self._srv, self._atyp, self._addr, self._port
+            self._ver, self._cmd, self._rsv, self._atyp, self._addr, self._port
         )
 
     @property
@@ -29,8 +29,8 @@ class AddrReq:
         return self._cmd
 
     @property
-    def srv(self):
-        return self._srv
+    def rsv(self):
+        return self._rsv
 
     @property
     def addr(self):
@@ -44,6 +44,9 @@ class AddrReq:
     def bypass(self):
         fmt_ = "!BB" + "%us" % len(self._addr) + "H"
         return pack(fmt_, self._atyp, len(self._addr), self._addr, self._port)
+
+    def to_bytes(self):
+        return pack("!BB", self._ver, self._cmd) + self._rsv + self.bypass
 
 
 class Socks5AuthReqGen:

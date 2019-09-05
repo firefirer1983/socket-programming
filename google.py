@@ -58,6 +58,7 @@ async def client(loop):
         await loop.sock_sendall(sock, addr_req)
         print("start send address request done")
         addr_rsp = await async_pull(Socks5AddrRspGen(), loop, sock)
+        print(addr_rsp)
         req = http_get("google.com", "/")
         print(req)
         await loop.sock_sendall(sock, req.encode("utf8"))
