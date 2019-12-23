@@ -35,15 +35,6 @@ AuthRsp = namedtuple("AuthRsp", "ver method")
 
 class AddrRsp(namedtuple("AddrRsp", "ver rep rsv atyp addr port")):
     def to_bytes(self):
-        print(
-            "======> ",
-            self.ver,
-            self.rep,
-            self.rsv,
-            self.atyp,
-            self.addr,
-            self.port,
-        )
         return (
             pack("!BB", self.ver, self.rep)
             + self.rsv

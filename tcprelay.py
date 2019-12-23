@@ -6,6 +6,9 @@ from sockets5.enums import Socks5AuthMethod, Socks5AddressAddrType
 from sockets5.socks5_req import Socks5AuthReqGen, Socks5AddrReqGen
 from sockets5.socks5_rsp import Socks5AuthRsp, Socks5AddrRsp, Socks5AddrRspGen
 from utils.util import async_pull
+from utils.loggers import get_logger
+
+log = get_logger("tcprelay")
 
 
 class TCPRelay:
@@ -35,13 +38,11 @@ class TCPRelay:
     async def accept(self):
         while True:
             csock, address = await self._loop.sock_accept(self._sock)
-            print("connect from :", address)
             self._loop.create_task(
                 TCPRelayHandler(
                     self, self._loop, self._resolver, csock
                 ).relay()
             )
-            print("create task relay done!")
 
     @property
     def sslocal_host(self):
@@ -106,6 +107,8 @@ class TCPRelayHandler:
         else:
 
             answer = await self._resolver.resolve(addr_req.addr)
+            if not answer:
+                return None
             target_ip = ".".join(["%u" % label for label in answer.rdata])
             print("target ip:", target_ip)
             await self._loop.sock_connect(self._remote_sock, (target_ip, 80))
@@ -142,8 +145,6 @@ class TCPRelayHandler:
                 self._remote_sock.close()
                 break
 
-        print("stop upstreaming")
-
     async def downstream(self):
         while True:
             try:
@@ -160,7 +161,6 @@ class TCPRelayHandler:
                 self._remote_sock.close()
                 self._sock.close()
                 break
-        print("stop downstreaming")
 
     async def relay(self):
         if self._config.is_sslocal:
@@ -172,8 +172,7 @@ class TCPRelayHandler:
 
         self._downstream = self._loop.create_task(self.downstream())
         self._upstream = self._loop.create_task(self.upstream())
-        if self._config.is_sslocal:
-            print("** sslocal start streaming **")
-        else:
-            print("** ssserver start streaming **")
-        # await asyncio.gather(self._upstream, self._downstream)
+        log.info(
+            "%s start streaming"
+            % ("sslocal" if self._config.is_sslocal else "ssserver")
+        )

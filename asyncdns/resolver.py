@@ -171,7 +171,6 @@ def main():
     dns.resolve([b"google.com"], make_callable())
     dns.resolve(b"youtube.com", make_callable())
     loop.run()
-
     # with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.SOL_UDP) as s:
     #     resolve_req = ResolveRequest([b'www.google.com', b'youtube.com'], QType.QTYPE_A, QClass.QCLASS_IN).to_bytes()
     #     s.sendto(resolve_req, (HOST, PORT))

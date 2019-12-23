@@ -1,55 +1,91 @@
 # !/usr/bin/env python3
 
 import functools
+import time
 from concurrent.futures import ThreadPoolExecutor
-from time import sleep
-
+from concurrent.futures import Future
 
 pool = ThreadPoolExecutor(max_workers=8)
 
 
-class Task:
-    
+def __iter__(self: Future):
+    if not self.done():
+        yield self
+    else:
+        return self.result()
+
+
+Future.__iter__ = __iter__
+
+
+class Task(Future):
     def __init__(self, gen):
+        super().__init__()
         self._gen = gen
-        
+    
     def step(self, value=None):
         try:
             fut_ = self._gen.send(value)
             fut_.add_done_callback(self.wakeup)
-        except StopIteration:
-            pass
-
+        except StopIteration as e:
+            self.set_result(e.value)
+    
     def wakeup(self, fut):
-        self.step(fut.result())
+        try:
+            self.step(fut.result())
+        except Exception as e:
+            fut.throw(e)
 
 
-def coroutine(f):
+def co_routine(f):
     @functools.wraps(f)
     def _func(*args, **kwargs):
         result = yield pool.submit(f, *args, **kwargs)
-        print("result:", result)
+        return result
+    
     return _func
 
 
-def multiply(x, y):
-    sleep(5)
-    return x * y
-
-
-def func_wrapper(x, y):
-    value = yield pool.submit(multiply, x, y)
-    print("value:", value)
-
-
-@coroutine
+@co_routine
 def add(x, y):
-    sleep(5)
+    time.sleep(2)
     return x + y
 
 
-m = Task(func_wrapper(5, 6))
-a = Task(add(1, 1))
-m.step(None)
-a.step(None)
-print("step")
+@co_routine
+def multiply(x, y):
+    time.sleep(2)
+    return x * y
+
+
+@co_routine
+def subtract(x, y):
+    return x - y
+
+
+def after(delay, fut):
+    yield from pool.submit(functools.partial(time.sleep, delay))
+    ret = yield from fut
+    return ret
+
+
+if __name__ == "__main__":
+    t = Task(add(1, 1))
+    t.step()
+    
+    t_add = Task(after(2, add(5, 6)))
+    print("start add")
+    t_add.step()
+    
+    t_mul = Task(after(2, multiply(3, 4)))
+    t_mul.step()
+    print("start mul")
+    
+    t_sub = Task(after(2, subtract(8, 32)))
+    t_sub.step()
+    print("start sub")
+    
+    start = time.time()
+    print(t_add.result(), t_mul.result(), t_sub.result())
+    print("%r seconds elapsed" % (time.time() - start))
+
